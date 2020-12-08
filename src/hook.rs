@@ -7,6 +7,7 @@ use crate::{
 use crossbeam_channel::unbounded;
 use lazy_static::lazy_static;
 use serenity::{client::bridge::gateway, model::prelude::*, prelude::*};
+use serenity::model::channel::ReactionType;
 use std::{
     iter::FromIterator,
     sync::Arc,
@@ -181,6 +182,23 @@ pub fn buffer_input(buffer: Buffer, text: &str) {
                 },
             }
             return;
+        }
+        if let Some(reaction) = parsing::parse_reaction(text) {
+            if let Ok(msgs) = channel.messages(ctx, |retriever| retriever.limit(reaction.line as u64)) { 
+                let mut i = 1;
+                for msg in msgs.iter() {
+                    if i == reaction.line {
+                        if reaction.add {
+                            let _ = msg.react(ctx, ReactionType::Unicode(reaction.unicode.to_string()));
+                        }
+                        else {
+                            let _ = channel.delete_reaction(&ctx, msg.id, None, ReactionType::Unicode(reaction.unicode.to_string()));
+                        }
+                    }
+                    i += 1;
+                }
+            }
+            return
         }
         let text = utils::create_mentions(&ctx.cache, guild, text);
         let text = utils::expand_guild_emojis(&ctx.cache, guild, &text);

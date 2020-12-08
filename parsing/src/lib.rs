@@ -28,6 +28,8 @@ pub fn weechat_arg_strip(str: &str) -> String {
 lazy_static! {
     static ref LINE_SUB_REGEX: Regex =
         Regex::new(r"^(\d)?s/(.*?(?<!\\))/(.*?(?<!\\))(?:/|$)(\w+)?").unwrap();
+    static ref REACTION_REGEX: Regex =
+        Regex::new(r"^(\d)?([\+\-])(.).*$").unwrap();
 }
 
 #[derive(Debug)]
@@ -41,6 +43,14 @@ pub enum LineEdit<'a> {
     Delete {
         line: usize,
     },
+}
+
+
+#[derive(Debug)]
+pub struct Reaction<'a> {
+    pub add: bool,
+    pub unicode: &'a str,
+    pub line: usize,
 }
 
 pub fn parse_line_edit(input: &str) -> Option<LineEdit> {
@@ -60,4 +70,12 @@ pub fn parse_line_edit(input: &str) -> Option<LineEdit> {
             options: caps.at(4),
         })
     }
+}
+
+pub fn parse_reaction(input: &str) -> Option<Reaction> {
+    let caps = REACTION_REGEX.captures(input)?;
+    let line = caps.at(1).and_then(|l| l.parse().ok()).unwrap_or(1);
+    let unicode_opt = caps.at(3);
+    let add = caps.at(2) == Some("+");
+    unicode_opt.map(|unicode| Reaction{ add, unicode, line })
 }
