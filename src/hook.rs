@@ -184,19 +184,26 @@ pub fn buffer_input(buffer: Buffer, text: &str) {
             return;
         }
         if let Some(reaction) = parsing::parse_reaction(text) {
-            if let Ok(msgs) = channel.messages(ctx, |retriever| retriever.limit(reaction.line as u64)) { 
+            if let Ok(msgs) =
+                channel.messages(ctx, |retriever| retriever.limit(reaction.line as u64))
+            {
                 for (i, msg) in msgs.iter().enumerate() {
                     if (i + 1) == reaction.line {
                         if reaction.add {
-                            let _ = msg.react(ctx, ReactionType::Unicode(reaction.unicode.to_string()));
-                        }
-                        else {
-                            let _ = channel.delete_reaction(&ctx, msg.id, None, ReactionType::Unicode(reaction.unicode.to_string()));
+                            let _ =
+                                msg.react(ctx, ReactionType::Unicode(reaction.unicode.to_string()));
+                        } else {
+                            let _ = channel.delete_reaction(
+                                &ctx,
+                                msg.id,
+                                None,
+                                ReactionType::Unicode(reaction.unicode.to_string()),
+                            );
                         }
                     }
                 }
             }
-            return
+            return;
         }
         let text = utils::create_mentions(&ctx.cache, guild, text);
         let text = utils::expand_guild_emojis(&ctx.cache, guild, &text);
