@@ -185,10 +185,8 @@ pub fn buffer_input(buffer: Buffer, text: &str) {
         }
         if let Some(reaction) = parsing::parse_reaction(text) {
             if let Ok(msgs) = channel.messages(ctx, |retriever| retriever.limit(reaction.line as u64)) { 
-                for msg in msgs.iter() {
                 for (i, msg) in msgs.iter().enumerate() {
                     if (i + 1) == reaction.line {
-                    if i == reaction.line {
                         if reaction.add {
                             let _ = msg.react(ctx, ReactionType::Unicode(reaction.unicode.to_string()));
                         }
