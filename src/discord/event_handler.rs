@@ -306,6 +306,14 @@ impl EventHandler for Handler {
         });
     }
 
+    fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        reaction_update(ctx, reaction)
+    }
+
+    fn reaction_remove(&self, ctx: Context, reaction: Reaction) {
+        reaction_update(ctx, reaction)
+    }
+
     fn ready(&self, ctx: Context, ready: Ready) {
         // Cache seems not to have all fields properly populated
 
@@ -410,6 +418,37 @@ fn delete_message(ctx: &Context, channel_id: ChannelId, deleted_message_id: Mess
         });
     }
 }
+
+fn reaction_update(ctx: Context, reaction: Reaction) {
+    let guild_id = match ctx.cache.read().channel(&reaction.channel_id) {
+        Some(Channel::Guild(channel)) => {
+            let channel = channel.read();
+            Some(channel.guild_id)
+        },
+        _ => return,
+    };
+    let buffer_name = utils::buffer_id_for_channel(guild_id, reaction.channel_id);
+    thread::spawn(move || {
+        on_main(move |weecord| {
+            if let Some(buffer) = weecord.buffer_manager.get_buffer(&buffer_name) {
+                let ctx = match crate::discord::get_ctx() {
+                    Some(ctx) => ctx,
+                    _ => return,
+                };
+                let msg = match reaction.channel_id
+                    .messages(ctx, |retriever| retriever.limit(1).around(reaction.message_id))
+                    .ok()
+                    .and_then(|mut msgs| msgs.pop())
+                    {
+                        Some(msgs) => msgs,
+                        None => return,
+                    };
+                buffer.replace_message(&ctx.cache, &reaction.message_id, &msg);
+            }
+        });
+    });
+}
+
 
 fn print_message(cache: &CacheRwLock, msg: &Message, buffer: &MessageManager) {
     let muted = utils::buffer_is_muted(&buffer);

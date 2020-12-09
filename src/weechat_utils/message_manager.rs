@@ -242,6 +242,20 @@ mod formatting_utils {
             }
         }
 
+        if msg.reactions.len() > 0 {
+            msg_content.push('\n');
+        }
+
+        for reaction in &msg.reactions {
+            msg_content.push_str(
+                &format!("[{} {}] ", reaction.reaction_type, reaction.count).as_str()
+            );
+        }
+
+        if msg.reactions.len() > 0 {
+            msg_content.push('\n');
+        }
+
         let mut prefix = String::new();
 
         if let Some(nick_prefix) = weechat.get_string_option("weechat.look.nick_prefix") {
