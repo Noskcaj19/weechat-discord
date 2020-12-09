@@ -246,10 +246,16 @@ mod formatting_utils {
             msg_content.push('\n');
         }
 
+        use serenity::model::channel::ReactionType;
         for reaction in &msg.reactions {
-            msg_content.push_str(
-                &format!("[{} {}] ", reaction.reaction_type, reaction.count).as_str()
-            );
+            match &reaction.reaction_type {
+                ReactionType::Custom { animated: _a, id: _b, name } => name.clone(),
+                ReactionType::Unicode(s) => Some(s.clone()),
+                ReactionType::__Nonexhaustive => None,
+            }.map( |reaction_string|
+                msg_content.push_str(
+                    &format!("[{} {}] ", reaction_string, reaction.count).as_str()
+                ));
         }
 
         if msg.reactions.len() > 0 {
