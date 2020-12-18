@@ -27,9 +27,9 @@ pub fn weechat_arg_strip(str: &str) -> String {
 
 lazy_static! {
     static ref LINE_SUB_REGEX: Regex =
-        Regex::new(r"^(\d)?s/(.*?(?<!\\))/(.*?(?<!\\))(?:/|$)(\w+)?").unwrap();
+        Regex::new(r"^(\d+)?s/(.*?(?<!\\))/(.*?(?<!\\))(?:/|$)(\w+)?").unwrap();
     static ref REACTION_REGEX: Regex =
-        Regex::new(r"^(\d)?([\+\-])(.).*$").unwrap();
+        Regex::new(r"^(\d+)?([\+\-])(.).*$").unwrap();
 }
 
 #[derive(Debug)]
