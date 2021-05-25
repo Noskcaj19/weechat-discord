@@ -1,66 +1,75 @@
 use crate::{
     buffer::{channel::Channel, guild::Guild, pins::Pins},
     discord::typing_indicator::TypingTracker,
-    refcell::{Ref, RefCell, RefMut},
     twilight_utils::MemberList,
 };
-use std::{cell::BorrowMutError, collections::HashMap, rc::Rc};
+use parking_lot::{
+    lock_api::{RwLockReadGuard, RwLockWriteGuard},
+    RawRwLock, RwLock,
+};
+use std::{collections::HashMap, rc::Rc};
 use twilight_model::id::{ChannelId, GuildId};
 
 #[derive(Clone)]
 pub struct Instance {
-    guilds: Rc<RefCell<HashMap<GuildId, Guild>>>,
-    private_channels: Rc<RefCell<HashMap<ChannelId, Channel>>>,
-    pins: Rc<RefCell<HashMap<(GuildId, ChannelId), Pins>>>,
-    typing_tracker: Rc<RefCell<TypingTracker>>,
-    member_lists: Rc<RefCell<HashMap<GuildId, MemberList>>>,
+    guilds: Rc<RwLock<HashMap<GuildId, Guild>>>,
+    private_channels: Rc<RwLock<HashMap<ChannelId, Channel>>>,
+    pins: Rc<RwLock<HashMap<(GuildId, ChannelId), Pins>>>,
+    typing_tracker: Rc<RwLock<TypingTracker>>,
+    member_lists: Rc<RwLock<HashMap<GuildId, MemberList>>>,
 }
 
 impl Instance {
     pub fn new() -> Self {
         Self {
-            guilds: Rc::new(RefCell::new(HashMap::new())),
-            private_channels: Rc::new(RefCell::new(HashMap::new())),
-            pins: Rc::new(RefCell::new(HashMap::new())),
-            typing_tracker: Rc::new(RefCell::new(TypingTracker::new())),
-            member_lists: Rc::new(RefCell::new(HashMap::new())),
+            guilds: Rc::new(RwLock::new(HashMap::new())),
+            private_channels: Rc::new(RwLock::new(HashMap::new())),
+            pins: Rc::new(RwLock::new(HashMap::new())),
+            typing_tracker: Rc::new(RwLock::new(TypingTracker::new())),
+            member_lists: Rc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub fn borrow_guilds(&self) -> Ref<'_, HashMap<GuildId, Guild>> {
-        self.guilds.borrow()
+    pub fn borrow_guilds(&self) -> RwLockReadGuard<'_, RawRwLock, HashMap<GuildId, Guild>> {
+        self.guilds.read()
     }
 
     pub fn try_borrow_guilds_mut(
         &self,
-    ) -> Result<RefMut<'_, HashMap<GuildId, Guild>>, BorrowMutError> {
-        self.guilds.try_borrow_mut()
+    ) -> Option<RwLockWriteGuard<'_, RawRwLock, HashMap<GuildId, Guild>>> {
+        self.guilds.try_write()
     }
 
-    pub fn borrow_guilds_mut(&self) -> RefMut<'_, HashMap<GuildId, Guild>> {
-        self.guilds.borrow_mut()
+    pub fn borrow_guilds_mut(&self) -> RwLockWriteGuard<'_, RawRwLock, HashMap<GuildId, Guild>> {
+        self.guilds.write()
     }
 
-    pub fn borrow_private_channels(&self) -> Ref<'_, HashMap<ChannelId, Channel>> {
-        self.private_channels.borrow()
+    pub fn borrow_private_channels(
+        &self,
+    ) -> RwLockReadGuard<'_, RawRwLock, HashMap<ChannelId, Channel>> {
+        self.private_channels.read()
     }
 
-    pub fn borrow_private_channels_mut(&self) -> RefMut<'_, HashMap<ChannelId, Channel>> {
-        self.private_channels.borrow_mut()
+    pub fn borrow_private_channels_mut(
+        &self,
+    ) -> RwLockWriteGuard<'_, RawRwLock, HashMap<ChannelId, Channel>> {
+        self.private_channels.write()
     }
 
     pub fn try_borrow_private_channels_mut(
         &self,
-    ) -> Result<RefMut<'_, HashMap<ChannelId, Channel>>, BorrowMutError> {
-        self.private_channels.try_borrow_mut()
+    ) -> Option<RwLockWriteGuard<'_, RawRwLock, HashMap<ChannelId, Channel>>> {
+        self.private_channels.try_write()
     }
 
-    pub fn borrow_pins_mut(&self) -> RefMut<'_, HashMap<(GuildId, ChannelId), Pins>> {
-        self.pins.borrow_mut()
+    pub fn borrow_pins_mut(
+        &self,
+    ) -> RwLockWriteGuard<'_, RawRwLock, HashMap<(GuildId, ChannelId), Pins>> {
+        self.pins.write()
     }
 
-    pub fn borrow_typing_tracker_mut(&self) -> RefMut<'_, TypingTracker> {
-        self.typing_tracker.borrow_mut()
+    pub fn borrow_typing_tracker_mut(&self) -> RwLockWriteGuard<'_, RawRwLock, TypingTracker> {
+        self.typing_tracker.write()
     }
 
     pub fn search_buffer(
@@ -69,21 +78,25 @@ impl Instance {
         channel_id: ChannelId,
     ) -> Option<Channel> {
         if let Some(guild_id) = guild_id {
-            if let Some(guild) = self.guilds.borrow().get(&guild_id) {
+            if let Some(guild) = self.guilds.read().get(&guild_id) {
                 return guild.channels().get(&channel_id).cloned();
             }
         } else {
-            return self.private_channels.borrow().get(&channel_id).cloned();
+            return self.private_channels.read().get(&channel_id).cloned();
         }
 
         None
     }
 
-    pub fn borrow_member_lists(&self) -> Ref<'_, HashMap<GuildId, MemberList>> {
-        self.member_lists.borrow()
+    pub fn borrow_member_lists(
+        &self,
+    ) -> RwLockReadGuard<'_, RawRwLock, HashMap<GuildId, MemberList>> {
+        self.member_lists.read()
     }
 
-    pub fn borrow_member_lists_mut(&self) -> RefMut<'_, HashMap<GuildId, MemberList>> {
-        self.member_lists.borrow_mut()
+    pub fn borrow_member_lists_mut(
+        &self,
+    ) -> RwLockWriteGuard<'_, RawRwLock, HashMap<GuildId, MemberList>> {
+        self.member_lists.write()
     }
 }

@@ -563,7 +563,7 @@ impl DiscordConnection {
             &config,
             &instance,
             move |_| {
-                if let Ok(mut channels) = instance_async.try_borrow_private_channels_mut() {
+                if let Some(mut channels) = instance_async.try_borrow_private_channels_mut() {
                     if let Some(channel) = channels.remove(&channel_id) {
                         channel.set_closed();
                     }

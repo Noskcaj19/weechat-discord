@@ -37,7 +37,7 @@ impl GuildBuffer {
                 let name = name.to_owned();
                 move |_: &Weechat, _: &Buffer| {
                     tracing::trace!(buffer.id=%id, buffer.name=%name, "Buffer close");
-                    if let Ok(mut instance) = instance.try_borrow_guilds_mut() {
+                    if let Some(mut instance) = instance.try_borrow_guilds_mut() {
                         if let Some(x) = instance.remove(&id) {
                             x.inner.borrow_mut().closed = true;
                         }
