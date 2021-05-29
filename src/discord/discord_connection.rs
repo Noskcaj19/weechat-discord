@@ -1,5 +1,5 @@
 use crate::{
-    buffer::{channel::Channel, ext::BufferExt},
+    buffer::{channel::Channel, ext::BufferExt, guild::Guild},
     config::{Config, GuildConfig},
     discord::{plugin_message::PluginMessage, typing_indicator::TypingEntry},
     instance::Instance,
@@ -235,33 +235,30 @@ impl DiscordConnection {
                     Weechat::print(&format!("discord: ready as: {}", user.tag()));
                     tracing::info!("Ready as {}", user.tag());
 
-                    if config.join_all() {
-                        for guild_id in conn.cache.guild_ids().expect("Cache always returns some") {
-                            let guild = crate::buffer::guild::Guild::new(
-                                guild_id,
-                                conn.clone(),
-                                GuildConfig::new_detached(guild_id),
-                                &config,
-                            );
-                            if let Err(e) = guild.connect(instance.clone()) {
-                                tracing::warn!("Unable to connect guild: {}", e);
-                            };
-                            instance.borrow_guilds_mut().insert(guild_id, guild);
-                        }
+                    let guilds: Vec<_> = if config.join_all() {
+                        conn.cache
+                            .guild_ids()
+                            .expect("Cache always returns some")
+                            .into_iter()
+                            .map(|guild_id| {
+                                (guild_id, GuildConfig::new_autoconnect_detached(guild_id))
+                            })
+                            .collect()
                     } else {
-                        for (guild_id, guild_config) in config.guilds() {
-                            let guild = crate::buffer::guild::Guild::new(
-                                guild_id,
-                                conn.clone(),
-                                guild_config.clone(),
+                        config.guilds().into_iter().collect()
+                    };
+
+                    for (guild_id, guild_config) in guilds {
+                        if let Some(twilight_guild) = conn.cache.guild(guild_id) {
+                            Guild::try_create(
+                                twilight_guild,
+                                &instance,
+                                conn,
+                                guild_config,
                                 &config,
                             );
-                            if guild_config.autoconnect() {
-                                if let Err(e) = guild.connect(instance.clone()) {
-                                    tracing::warn!("Unable to connect guild: {}", e);
-                                };
-                            }
-                            instance.borrow_guilds_mut().insert(guild_id, guild);
+                        } else {
+                            tracing::warn!(guild.id=%guild_id, "Guild not in cache");
                         }
                     }
 

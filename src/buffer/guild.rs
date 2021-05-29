@@ -6,7 +6,7 @@ use crate::{
     refcell::RefCell,
     twilight_utils::ext::GuildChannelExt,
 };
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 use twilight_cache_inmemory::model::CachedGuild as TwilightGuild;
 use twilight_model::{
     channel::GuildChannel as TwilightChannel,
@@ -63,16 +63,25 @@ impl GuildBuffer {
 
 pub struct GuildInner {
     conn: ConnectionInner,
-    buffer: Option<GuildBuffer>,
+    instance: Instance,
+    guild: Arc<TwilightGuild>,
+    buffer: GuildBuffer,
     channels: HashMap<ChannelId, Channel>,
     closed: bool,
 }
 
 impl GuildInner {
-    pub fn new(conn: ConnectionInner) -> Self {
+    pub fn new(
+        conn: ConnectionInner,
+        instance: Instance,
+        buffer: GuildBuffer,
+        guild: Arc<TwilightGuild>,
+    ) -> Self {
         Self {
             conn,
-            buffer: None,
+            instance,
+            buffer,
+            guild,
             channels: HashMap::new(),
             closed: false,
         }
@@ -87,10 +96,8 @@ impl Drop for GuildInner {
         if self.closed {
             return;
         }
-        if let Some(buffer) = self.buffer.as_ref() {
-            if let Ok(buffer) = buffer.0.upgrade() {
-                buffer.close();
-            }
+        if let Ok(buffer) = self.buffer.0.upgrade() {
+            buffer.close();
         }
     }
 }
@@ -108,102 +115,141 @@ impl Guild {
         (Rc::strong_count(&self.inner), Rc::weak_count(&self.inner))
     }
 
-    pub fn new(
-        id: GuildId,
+    fn new(
+        guild: Arc<TwilightGuild>,
+        instance: Instance,
         conn: ConnectionInner,
         guild_config: GuildConfig,
         config: &Config,
-    ) -> Self {
-        let inner = Rc::new(RefCell::new(GuildInner::new(conn)));
-        Guild {
-            id,
+    ) -> anyhow::Result<Guild> {
+        let buffer = GuildBuffer::new(&guild.name, guild.id, instance.clone())?;
+        let inner = Rc::new(RefCell::new(GuildInner::new(
+            conn,
+            instance,
+            buffer,
+            Arc::clone(&guild),
+        )));
+        let guild = Guild {
+            id: guild.id,
             inner,
             guild_config,
             config: config.clone(),
+        };
+        Ok(guild)
+    }
+
+    /// Tries to create a Guild and insert it into the instance, logging errors
+    pub fn try_create(
+        twilight_guild: Arc<TwilightGuild>,
+        instance: &Instance,
+        conn: &ConnectionInner,
+        guild_config: GuildConfig,
+        config: &Config,
+    ) {
+        match Self::new(
+            Arc::clone(&twilight_guild),
+            instance.clone(),
+            conn.clone(),
+            guild_config.clone(),
+            &config,
+        ) {
+            Ok(guild) => {
+                if guild_config.autoconnect() {
+                    guild.try_join_channels();
+                }
+                instance.borrow_guilds_mut().insert(guild.id, guild);
+            },
+            Err(e) => {
+                tracing::error!(
+                    guild.id=%twilight_guild.id,
+                    guild.name=%twilight_guild.name,
+                    "Unable to connect guild: {}", e
+                );
+            },
         }
     }
 
-    pub fn connect(&self, instance: Instance) -> anyhow::Result<()> {
+    pub fn try_join_channels(&self) {
+        if let Err(e) = self.join_channels() {
+            tracing::warn!("Unable to connect guild: {}", e);
+            Weechat::print(&format!(
+                "discord: Unable to connect to {}",
+                self.inner.borrow().guild.name
+            ));
+        };
+    }
+
+    fn join_channels(&self) -> anyhow::Result<()> {
         let mut inner = self.inner.borrow_mut();
-        if let Some(guild) = inner.conn.cache.guild(self.id) {
-            inner
-                .buffer
-                .replace(GuildBuffer::new(&guild.name, guild.id, instance.clone())?);
 
-            let conn = inner.conn.clone();
+        let conn = inner.conn.clone();
 
-            if self.config.join_all() {
-                if let Some(guild_channels) = conn.cache.guild_channels(self.id) {
-                    for channel_id in guild_channels {
-                        if let Some(cached_channel) = conn.cache.guild_channel(channel_id) {
-                            if cached_channel.is_text_channel(&conn.cache) {
-                                tracing::info!(
-                                    "Joining discord mode channel: #{}",
-                                    cached_channel.name()
-                                );
-
-                                self._join_channel(&cached_channel, &guild, &mut inner, &instance)?;
-                            }
-                        }
-                    }
-                }
-            } else {
-                for channel_id in self.guild_config.autojoin_channels() {
+        if self.config.join_all() {
+            if let Some(guild_channels) = conn.cache.guild_channels(self.id) {
+                for channel_id in guild_channels {
                     if let Some(cached_channel) = conn.cache.guild_channel(channel_id) {
                         if cached_channel.is_text_channel(&conn.cache) {
-                            tracing::info!("Joining autojoin channel: #{}", cached_channel.name());
-
-                            self._join_channel(&cached_channel, &guild, &mut inner, &instance)?;
-                        }
-                    }
-                }
-
-                for watched_channel_id in self.guild_config.watched_channels() {
-                    if let Some(channel) = conn.cache.guild_channel(watched_channel_id) {
-                        if let Some(read_state) = conn.cache.read_state(watched_channel_id) {
-                            if Some(read_state.last_message_id) == channel.last_message_id() {
-                                continue;
-                            };
-                        } else {
-                            tracing::warn!(
-                                channel_id=?watched_channel_id,
-                                "Unable to get read state for watched channel, skipping",
+                            tracing::info!(
+                                "Joining discord mode channel: #{}",
+                                cached_channel.name()
                             );
-                            continue;
-                        }
 
-                        if channel.is_text_channel(&conn.cache) {
-                            tracing::info!("Joining watched channel: #{}", channel.name());
-
-                            self._join_channel(&channel, &guild, &mut inner, &instance)?;
+                            self._join_channel(&cached_channel, &mut inner)?;
                         }
                     }
                 }
             }
-
-            Ok(())
         } else {
-            tracing::warn!(guild_id=%self.id, "guild not cached");
-            Err(anyhow::anyhow!("Guild: {} is not in the cache", self.id))
+            for channel_id in self.guild_config.autojoin_channels() {
+                if let Some(cached_channel) = conn.cache.guild_channel(channel_id) {
+                    if cached_channel.is_text_channel(&conn.cache) {
+                        tracing::info!("Joining autojoin channel: #{}", cached_channel.name());
+
+                        self._join_channel(&cached_channel, &mut inner)?;
+                    }
+                }
+            }
+
+            for watched_channel_id in self.guild_config.watched_channels() {
+                if let Some(channel) = conn.cache.guild_channel(watched_channel_id) {
+                    if let Some(read_state) = conn.cache.read_state(watched_channel_id) {
+                        if Some(read_state.last_message_id) == channel.last_message_id() {
+                            continue;
+                        };
+                    } else {
+                        tracing::warn!(
+                            channel_id=?watched_channel_id,
+                            "Unable to get read state for watched channel, skipping",
+                        );
+                        continue;
+                    }
+
+                    if channel.is_text_channel(&conn.cache) {
+                        tracing::info!("Joining watched channel: #{}", channel.name());
+
+                        self._join_channel(&channel, &mut inner)?;
+                    }
+                }
+            }
         }
+
+        Ok(())
     }
 
     fn _join_channel(
         &self,
         channel: &TwilightChannel,
-        guild: &TwilightGuild,
         inner: &mut GuildInner,
-        instance: &Instance,
     ) -> anyhow::Result<Channel> {
         let weak_inner = Rc::downgrade(&self.inner);
         let channel_id = channel.id();
         let last_message_id = channel.last_message_id();
         let channel = crate::buffer::channel::Channel::guild(
             &channel,
-            &guild,
+            &inner.guild,
             &inner.conn,
             &self.config,
-            instance,
+            &inner.instance,
             move |_| {
                 if let Some(inner) = weak_inner.upgrade() {
                     if let Ok(mut inner) = inner.try_borrow_mut() {
@@ -226,13 +272,8 @@ impl Guild {
         Ok(channel)
     }
 
-    pub fn join_channel(
-        &self,
-        channel: &TwilightChannel,
-        guild: &TwilightGuild,
-        instance: &Instance,
-    ) -> anyhow::Result<Channel> {
-        self._join_channel(channel, guild, &mut self.inner.borrow_mut(), instance)
+    pub fn join_channel(&self, channel: &TwilightChannel) -> anyhow::Result<Channel> {
+        self._join_channel(channel, &mut self.inner.borrow_mut())
     }
 
     pub fn channels(&self) -> HashMap<ChannelId, Channel> {

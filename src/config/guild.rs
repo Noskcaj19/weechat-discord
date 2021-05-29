@@ -40,9 +40,11 @@ pub struct GuildConfig {
 
 impl GuildConfig {
     /// Creates a guild config not attached to any weechat options
-    pub fn new_detached(id: GuildId) -> Self {
+    pub fn new_autoconnect_detached(id: GuildId) -> Self {
+        let mut inner = GuildConfigInner::new();
+        inner.autoconnect = true;
         Self {
-            inner: Rc::new(RefCell::new(GuildConfigInner::new())),
+            inner: Rc::new(RefCell::new(inner)),
             id,
         }
     }
