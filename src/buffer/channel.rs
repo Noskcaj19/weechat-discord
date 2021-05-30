@@ -48,7 +48,6 @@ impl ChannelBuffer {
         conn: &ConnectionInner,
         config: &Config,
         instance: &Instance,
-        mut close_cb: impl FnMut(&Buffer) + 'static,
     ) -> anyhow::Result<Self> {
         let clean_guild_name = crate::utils::clean_name(&guild_name);
         let clean_channel_name = crate::utils::clean_name(&name);
@@ -75,9 +74,14 @@ impl ChannelBuffer {
             })
             .close_callback({
                 let name = name.to_owned();
-                move |_: &Weechat, buffer: &Buffer| {
+                let instance = instance.clone();
+                move |_: &Weechat, _: &Buffer| {
                     tracing::trace!(buffer.id=%id, buffer.name=%name, "Buffer close");
-                    close_cb(buffer);
+                    instance
+                        .borrow_channels_mut()
+                        .remove(&id)
+                        .expect("channel must be in instance")
+                        .set_closed();
                     Ok(())
                 }
             })
@@ -115,7 +119,6 @@ impl ChannelBuffer {
         conn: &ConnectionInner,
         config: &Config,
         instance: &Instance,
-        mut close_cb: impl FnMut(&Buffer) + 'static,
     ) -> anyhow::Result<Self> {
         let id = channel.id;
 
@@ -141,9 +144,14 @@ impl ChannelBuffer {
             })
             .close_callback({
                 let short_name = short_name.to_string();
-                move |_: &Weechat, buffer: &Buffer| {
+                let instance = instance.clone();
+                move |_: &Weechat, _: &Buffer| {
                     tracing::trace!(buffer.id=%id, buffer.name=%short_name, "Buffer close");
-                    close_cb(buffer);
+                    instance
+                        .borrow_private_channels_mut()
+                        .remove(&id)
+                        .expect("private channel must be in instance")
+                        .set_closed();
                     Ok(())
                 }
             })
@@ -331,7 +339,6 @@ impl Channel {
         conn: &ConnectionInner,
         config: &Config,
         instance: &Instance,
-        close_cb: impl FnMut(&Buffer) + 'static,
     ) -> anyhow::Result<Self> {
         let nick = format!(
             "@{}",
@@ -352,7 +359,6 @@ impl Channel {
             conn,
             config,
             instance,
-            close_cb,
         )?;
         let inner = Rc::new(RefCell::new(ChannelInner::new(
             conn.clone(),
@@ -372,9 +378,8 @@ impl Channel {
         conn: &ConnectionInner,
         config: &Config,
         instance: &Instance,
-        close_cb: impl FnMut(&Buffer) + 'static,
     ) -> anyhow::Result<Self> {
-        let channel_buffer = ChannelBuffer::private(&channel, conn, config, instance, close_cb)?;
+        let channel_buffer = ChannelBuffer::private(&channel, conn, config, instance)?;
         let inner = Rc::new(RefCell::new(ChannelInner::new(
             conn.clone(),
             channel_buffer,

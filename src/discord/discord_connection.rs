@@ -551,22 +551,10 @@ impl DiscordConnection {
         instance: &Instance,
         channel: &PrivateChannel,
     ) -> anyhow::Result<Channel> {
-        let instance_async = instance.clone();
         let last_message_id = channel.last_message_id();
         let channel_id = channel.id;
-        let channel = crate::buffer::channel::Channel::private(
-            &channel,
-            &conn,
-            &config,
-            &instance,
-            move |_| {
-                if let Some(mut channels) = instance_async.try_borrow_private_channels_mut() {
-                    if let Some(channel) = channels.remove(&channel_id) {
-                        channel.set_closed();
-                    }
-                }
-            },
-        )?;
+        let channel =
+            crate::buffer::channel::Channel::private(&channel, &conn, &config, &instance)?;
 
         if let Some(read_state) = conn.cache.read_state(channel_id) {
             if last_message_id > Some(read_state.last_message_id) {

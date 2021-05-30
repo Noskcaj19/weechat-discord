@@ -13,6 +13,7 @@ use twilight_model::id::{ChannelId, GuildId};
 #[derive(Clone)]
 pub struct Instance {
     guilds: Rc<RwLock<HashMap<GuildId, Guild>>>,
+    channels: Rc<RwLock<HashMap<ChannelId, Channel>>>,
     private_channels: Rc<RwLock<HashMap<ChannelId, Channel>>>,
     pins: Rc<RwLock<HashMap<(GuildId, ChannelId), Pins>>>,
     typing_tracker: Rc<RwLock<TypingTracker>>,
@@ -23,6 +24,7 @@ impl Instance {
     pub fn new() -> Self {
         Self {
             guilds: Rc::new(RwLock::new(HashMap::new())),
+            channels: Rc::new(RwLock::new(HashMap::new())),
             private_channels: Rc::new(RwLock::new(HashMap::new())),
             pins: Rc::new(RwLock::new(HashMap::new())),
             typing_tracker: Rc::new(RwLock::new(TypingTracker::new())),
@@ -44,6 +46,16 @@ impl Instance {
         self.guilds.write()
     }
 
+    pub fn borrow_channels(&self) -> RwLockReadGuard<'_, RawRwLock, HashMap<ChannelId, Channel>> {
+        self.channels.read()
+    }
+
+    pub fn borrow_channels_mut(
+        &self,
+    ) -> RwLockWriteGuard<'_, RawRwLock, HashMap<ChannelId, Channel>> {
+        self.channels.write()
+    }
+
     pub fn borrow_private_channels(
         &self,
     ) -> RwLockReadGuard<'_, RawRwLock, HashMap<ChannelId, Channel>> {
@@ -54,12 +66,6 @@ impl Instance {
         &self,
     ) -> RwLockWriteGuard<'_, RawRwLock, HashMap<ChannelId, Channel>> {
         self.private_channels.write()
-    }
-
-    pub fn try_borrow_private_channels_mut(
-        &self,
-    ) -> Option<RwLockWriteGuard<'_, RawRwLock, HashMap<ChannelId, Channel>>> {
-        self.private_channels.try_write()
     }
 
     pub fn borrow_pins_mut(
